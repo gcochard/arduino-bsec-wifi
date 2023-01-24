@@ -47,8 +47,10 @@
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-bool displayEnabled = false;
+bool hasDisplay = false;
 /* end oled screen stuff */
+
+bool hasSerial = false;
 
 
 
@@ -173,22 +175,22 @@ class Request{
      *  
      *  <body>
      */
-    //Serial.println("Parsing\n******"+ in +"\n******");
+    //if(hasSerial) Serial.println("Parsing\n******"+ in +"\n******");
     verb = Verb::Invalid;
     path = "/";
     httpVersionMajor = 1;
     httpVersionMinor = 0;
     int verbEnd = in.indexOf(" ");
-    //Serial.print("verbEnd: ");
-    //Serial.println(verbEnd);
+    //if(hasSerial) Serial.print("verbEnd: ");
+    //if(hasSerial) Serial.println(verbEnd);
     if(verbEnd > 8 || verbEnd < 1){
-      Serial.print("VerbEnd >8 or <1: ");
-      Serial.println(verbEnd);
+      if(hasSerial) Serial.print("VerbEnd >8 or <1: ");
+      if(hasSerial) Serial.println(verbEnd);
       return;
     }
     String sverb = in.substring(0, verbEnd);
     sverb.toLowerCase();
-    //Serial.println("sverb: " + sverb);
+    //if(hasSerial) Serial.println("sverb: " + sverb);
     if(sverb.startsWith("g")){
       verb = Verb::Get;
     } else if(sverb.startsWith("pu")){
@@ -201,7 +203,7 @@ class Request{
       verb = Verb::Head;
     }
     String rest = in.substring(verbEnd+1);
-    //Serial.println("rest: ******" + rest + "******");
+    //if(hasSerial) Serial.println("rest: ******" + rest + "******");
     String verbStr = "";
     switch(verb){
       case Verb::Get:
@@ -223,30 +225,30 @@ class Request{
       verbStr = "Invalid";
     }
     int pathEnd = rest.indexOf(" ");
-    //Serial.print("pathEnd: ");
-    //Serial.println(pathEnd);
+    //if(hasSerial) Serial.print("pathEnd: ");
+    //if(hasSerial) Serial.println(pathEnd);
     if(pathEnd == -1){
-      Serial.print("PathEnd == -1! ");
-      Serial.println(rest.indexOf(" "));
+      if(hasSerial) Serial.print("PathEnd == -1! ");
+      if(hasSerial) Serial.println(rest.indexOf(" "));
       return;
     }
     path = rest.substring(0, pathEnd);
-    //Serial.print("path parsed: ");
-    //Serial.println(path);
+    //if(hasSerial) Serial.print("path parsed: ");
+    //if(hasSerial) Serial.println(path);
     rest = rest.substring(pathEnd+1);
-    //Serial.println("rest: ******" + rest + "******");
+    //if(hasSerial) Serial.println("rest: ******" + rest + "******");
     String versionstring = rest.substring(0, 8);
-    //Serial.println("version chunk: " + versionstring);
+    //if(hasSerial) Serial.println("version chunk: " + versionstring);
     if(!versionstring.startsWith("HTTP")){
-      Serial.print("versionString not HTTP/X.Y: '");
-      Serial.print(versionstring);
-      Serial.println("'");
+      if(hasSerial) Serial.print("versionString not HTTP/X.Y: '");
+      if(hasSerial) Serial.print(versionstring);
+      if(hasSerial) Serial.println("'");
       return;
     }
     int majorStart = versionstring.indexOf("/")+1;
     httpVersionMajor = versionstring.substring(majorStart,majorStart+1).toInt();
     httpVersionMinor = versionstring.substring(majorStart+2,majorStart+3).toInt();
-    Serial.println("HTTP request parsed. Verb: " + verbStr + "\n\tPath: " + String(path) + "\n\tVersion: " + String(httpVersionMajor) + "." + String(httpVersionMinor));
+    if(hasSerial) Serial.println("HTTP request parsed. Verb: " + verbStr + "\n\tPath: " + String(path) + "\n\tVersion: " + String(httpVersionMajor) + "." + String(httpVersionMinor));
     rest = rest.substring(rest.indexOf('\n')+1);
     int headerEnd = rest.indexOf("\n\n");
     String tmp;
@@ -259,30 +261,30 @@ class Request{
     }
     //headers = rest.substring(0);
     headerCount = 0;
-    Serial.println("Parsing headers...");
+    if(hasSerial) Serial.println("Parsing headers...");
     while(tmp.indexOf('\n') && headerCount < 20 && tmp.length()){
       headers_arr[headerCount] = new String;
       headers_arr[headerCount]->concat(tmp.substring(0,tmp.indexOf('\n')));
-      //Serial.println(headers_arr[headerCount]->c_str());
+      //if(hasSerial) Serial.println(headers_arr[headerCount]->c_str());
       tmp = tmp.substring(tmp.indexOf('\n')+1);
-      //Serial.println("Remaining request length: " + String(tmp.length()));
+      //if(hasSerial) Serial.println("Remaining request length: " + String(tmp.length()));
       headerCount++;
     }
-    //Serial.println("Header count: " + String(headerCount));
+    //if(hasSerial) Serial.println("Header count: " + String(headerCount));
     if(tmp.length() > 1){
-      Serial.println("Warning, unparsed headers ignored:\n" + tmp);
+      if(hasSerial) Serial.println("Warning, unparsed headers ignored:\n" + tmp);
     }
     tmp = rest.substring(headerEnd);
     if(hasBody) {
       body.concat(rest.substring(headerEnd+1));
     }
-    Serial.println("\tHeaders length: "+String(headerCount));
-    Serial.println("\tBody length: "+String(body.length()));
-    //Serial.println(path);
-    //Serial.print("\tVersion: ");
-    //Serial.print(httpVersionMajor);
-    //Serial.print(".");
-    //Serial.println(httpVersionMinor);
+    if(hasSerial) Serial.println("\tHeaders length: "+String(headerCount));
+    if(hasSerial) Serial.println("\tBody length: "+String(body.length()));
+    //if(hasSerial) Serial.println(path);
+    //if(hasSerial) Serial.print("\tVersion: ");
+    //if(hasSerial) Serial.print(httpVersionMajor);
+    //if(hasSerial) Serial.print(".");
+    //if(hasSerial) Serial.println(httpVersionMinor);
   }
   ~Request() {
     for(int i=0;i<headerCount;i++){
@@ -359,8 +361,28 @@ void setup(void)
     Wire.begin();
     pinMode(PANIC_LED, OUTPUT);
 
-    /* Valid for boards with USB-COM. Wait until the port is open */
-    //while (!Serial) delay(10);
+
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    //if(hasSerial) Serial.println(F("SSD1306 allocation successful"));
+    hasDisplay = true;
+    display.display();
+    display.clearDisplay();
+    delay(1000);
+    display.setTextSize(1);             // Normal 1:1 pixel scale
+    display.setTextColor(SSD1306_WHITE);        // Draw white text
+    display.setCursor(0,0);             // Start at top-left corner
+    display.println(F("Connecting to SSID:"));
+    display.println(ssid);
+    display.display();
+  }
+
+    /* Valid for boards with USB-COM. Wait for 10 seconds until the port is open */
+    while (!Serial && millis() < 10000) delay(10);
+
+    if(Serial.availableForWrite()){
+      hasSerial = true;
+    }
    
     /* Initialize the library and interfaces */
     if (!envSensor.begin(BME68X_I2C_ADDR_HIGH, Wire))
@@ -389,39 +411,23 @@ void setup(void)
     /* Whenever new data is available call the newDataCallback function */
     envSensor.attachCallback(newDataCallback);
 
-    Serial.println("\nBSEC library version " + \
+    if(hasSerial) Serial.println("\nBSEC library version " + \
             String(envSensor.version.major) + "." \
             + String(envSensor.version.minor) + "." \
             + String(envSensor.version.major_bugfix) + "." \
             + String(envSensor.version.minor_bugfix));
 
-
-  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if(display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation successful"));
-    displayEnabled = true;
-    display.display();
-    display.clearDisplay();
-    delay(1000);
-    display.setTextSize(1);             // Normal 1:1 pixel scale
-    display.setTextColor(SSD1306_WHITE);        // Draw white text
-    display.setCursor(0,0);             // Start at top-left corner
-    display.println(F("Connecting to SSID:"));
-    display.println(ssid);
-    display.display();
-  }
-
   // attempt to connect to Wifi network:
-  Serial.print("Attempting to connect to SSID: ");
-  Serial.println(ssid);
+  if(hasSerial) Serial.print("Attempting to connect to SSID: ");
+  if(hasSerial) Serial.println(ssid);
 
   const unsigned long connectionTimeout = 60L * 1000L;
   unsigned long startTime = millis();
   WiFi.begin(ssid, pass);
   while (WiFi.status() != WL_CONNECTED) {
       delay(500);
-      Serial.print(".");
-      if(displayEnabled){
+      if(hasSerial) Serial.print(".");
+      if(hasDisplay){
         display.print(".");
         display.display();
       }
@@ -432,9 +438,9 @@ void setup(void)
       }
   }
 
-  Serial.println("");
-  Serial.println("Connected to WiFi");
-  if(displayEnabled){
+  if(hasSerial) Serial.println("");
+  if(hasSerial) Serial.println("Connected to WiFi");
+  if(hasDisplay){
     display.clearDisplay();
     display.setCursor(0,0);             // Start at top-left corner
     display.print(F("RSSI: "));
@@ -471,7 +477,7 @@ void loop(void)
 
 void errLeds(int bsecStatus, int bsecSensorStatus)
 {
-  if(displayEnabled){
+  if(hasDisplay){
     display.clearDisplay();
     display.setTextSize(1);             // Normal 1:1 pixel scale
     display.setTextColor(SSD1306_WHITE);        // Draw white text
@@ -517,7 +523,7 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
     if (!outputs.nOutputs)
         return;
 
-    Serial.println("BSEC outputs:\n\ttimestamp = " + String((int) (outputs.output[0].time_stamp / INT64_C(1000000))));
+    if(hasSerial) Serial.println("BSEC outputs:\n\ttimestamp = " + String((int) (outputs.output[0].time_stamp / INT64_C(1000000))));
     for (uint8_t i = 0; i < outputs.nOutputs; i++)
     {
         const bsecData output  = outputs.output[i];
@@ -537,56 +543,56 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
             client.println(ftd(lastOutput.voc));
            */
             case BSEC_OUTPUT_RUN_IN_STATUS:
-                Serial.println("\tRun in status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tRun in status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 break;
             case BSEC_OUTPUT_STABILIZATION_STATUS:
-                Serial.println("\tStabilization status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tStabilization status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 break;
             case BSEC_OUTPUT_IAQ:
-                Serial.println("\tIAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tIAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.air_quality = output.signal;
                 lastOutput.air_quality_accuracy = output.accuracy;
                 break;
             case BSEC_OUTPUT_STATIC_IAQ:
-                Serial.println("\tStatic IAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tStatic IAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.static_air_quality = output.signal;
                 break;
             case BSEC_OUTPUT_CO2_EQUIVALENT:
-                Serial.println("\tCO2 equivalent = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tCO2 equivalent = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.eco2 = output.signal;
                 break;
             case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT:
-                Serial.println("\tbreath VOC = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tbreath VOC = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.voc = output.signal;
                 break;
             case BSEC_OUTPUT_RAW_TEMPERATURE:
-                Serial.println("\ttemperature = " + String(output.signal * 9 / 5 + 32) + "°F" + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\ttemperature = " + String(output.signal * 9 / 5 + 32) + "°F" + ", accuracy: " + String(output.accuracy));
                 lastOutput.raw_temp = output.signal * 9 / 5 + 32;
                 break;
             case BSEC_OUTPUT_RAW_PRESSURE:
-                Serial.println("\tpressure = " + String(output.signal * 0.00029529983071445) + "inHg" + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tpressure = " + String(output.signal * 0.00029529983071445) + "inHg" + ", accuracy: " + String(output.accuracy));
                 lastOutput.raw_pressure = output.signal * 0.00029529983071445;
                 break;
             case BSEC_OUTPUT_RAW_HUMIDITY:
-                Serial.println("\thumidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\thumidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
                 lastOutput.raw_humidity = output.signal;
                 break;
             case BSEC_OUTPUT_RAW_GAS:
-                Serial.println("\tgas resistance = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tgas resistance = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.raw_gas = output.signal;
                 break;
             case BSEC_OUTPUT_RAW_GAS_INDEX:
-                Serial.println("\tgas index = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tgas index = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 if(int(output.signal) == 9){
                   updateDisplay();
                 }
                 break;
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
-                Serial.println("\tcompensated temperature = " + String(output.signal * 9 / 5 + 32) + "°F" + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tcompensated temperature = " + String(output.signal * 9 / 5 + 32) + "°F" + ", accuracy: " + String(output.accuracy));
                 lastOutput.comp_temp = output.signal * 9 / 5 + 32;
                 break;
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
-                Serial.println("\tcompensated humidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
+                if(hasSerial) Serial.println("\tcompensated humidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
                 lastOutput.comp_humidity = output.signal;
                 break;
             case BSEC_OUTPUT_GAS_ESTIMATE_1:
@@ -595,7 +601,7 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
             case BSEC_OUTPUT_GAS_ESTIMATE_4:
                 if((int)(output.signal * 10000.0f) > 0) /* Ensure that there is a valid value xx.xx% */
                 {
-                    Serial.println("\t" + \
+                    if(hasSerial) Serial.println("\t" + \
                       gasName[(int) (output.sensor_id - BSEC_OUTPUT_GAS_ESTIMATE_1)] + \
                       String(" probability : ") + String(output.signal * 100) + "%");
                 }
@@ -678,20 +684,20 @@ void checkBsecStatus(Bsec2 bsec)
 {
     if (bsec.status < BSEC_OK)
     {
-        Serial.println("BSEC error code : " + String(bsec.status));
+        if(hasSerial) Serial.println("BSEC error code : " + String(bsec.status));
         errLeds(bsec.status, 0); /* Halt in case of failure */
     } else if (bsec.status > BSEC_OK)
     {
-        Serial.println("BSEC warning code : " + String(bsec.status));
+        if(hasSerial) Serial.println("BSEC warning code : " + String(bsec.status));
     }
 
     if (bsec.sensor.status < BME68X_OK)
     {
-        Serial.println("BME68X error code : " + String(bsec.sensor.status));
+        if(hasSerial) Serial.println("BME68X error code : " + String(bsec.sensor.status));
         errLeds(0, bsec.sensor.status); /* Halt in case of failure */
     } else if (bsec.sensor.status > BME68X_OK)
     {
-        Serial.println("BME68X warning code : " + String(bsec.sensor.status));
+        if(hasSerial) Serial.println("BME68X warning code : " + String(bsec.sensor.status));
     }
 }
 
@@ -703,21 +709,21 @@ bool loadState(Bsec2 bsec)
     if (EEPROM.read(0) == BSEC_MAX_STATE_BLOB_SIZE)
     {
         /* Existing state in EEPROM */
-        Serial.println("Reading state from EEPROM");
-        Serial.print("State file: ");
+        if(hasSerial) Serial.println("Reading state from EEPROM");
+        if(hasSerial) Serial.print("State file: ");
         for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
         {
             bsecState[i] = EEPROM.read(i + 1);
-            Serial.print(String(bsecState[i], HEX) + ", ");
+            if(hasSerial) Serial.print(String(bsecState[i], HEX) + ", ");
         }
-        Serial.println();
+        if(hasSerial) Serial.println();
 
         if (!bsec.setState(bsecState))
             return false;
     } else
     {
         /* Erase the EEPROM with zeroes */
-        Serial.println("Erasing EEPROM");
+        if(hasSerial) Serial.println("Erasing EEPROM");
 
         for (uint8_t i = 0; i <= BSEC_MAX_STATE_BLOB_SIZE; i++)
             EEPROM.write(i, 0);
@@ -734,15 +740,15 @@ bool saveState(Bsec2 bsec)
     if (!bsec.getState(bsecState))
         return false;
 
-    Serial.println("Writing state to EEPROM");
-    Serial.print("State file: ");
+    if(hasSerial) Serial.println("Writing state to EEPROM");
+    if(hasSerial) Serial.print("State file: ");
 
     for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
     {
         EEPROM.write(i + 1, bsecState[i]);
-        Serial.print(String(bsecState[i], HEX) + ", ");
+        if(hasSerial) Serial.print(String(bsecState[i], HEX) + ", ");
     }
-    Serial.println();
+    if(hasSerial) Serial.println();
 
     EEPROM.write(0, BSEC_MAX_STATE_BLOB_SIZE);
     EEPROM.commit();
@@ -752,19 +758,19 @@ bool saveState(Bsec2 bsec)
 
 void printWifiStatus() {
   // print the SSID of the network you're attached to:
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
+  if(hasSerial) Serial.print("SSID: ");
+  if(hasSerial) Serial.println(WiFi.SSID());
 
   // print your board's IP address:
   IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
+  if(hasSerial) Serial.print("IP Address: ");
+  if(hasSerial) Serial.println(ip);
 
   // print the received signal strength:
   long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm");
+  if(hasSerial) Serial.print("signal strength (RSSI):");
+  if(hasSerial) Serial.print(rssi);
+  if(hasSerial) Serial.println(" dBm");
 }
 
 bool processOneRequest(){
@@ -772,7 +778,7 @@ bool processOneRequest(){
   String resp = "<table><tr><th>Timestamp [ms]</th><th>raw temperature [°F]</th><th>pressure [mmHg]</th><th>raw relative humidity [%]</th><th>gas [Ohm]</th><th>IAQ</th><th>IAQ accuracy</th><th>temperature [°F]</th><th>relative humidity [%]</th><th>Static IAQ</th><th>CO2 equivalent</th><th>breath VOC equivalent</tr>\n";
   WiFiClient client = server.available();
   if (client) {
-    Serial.println("New client");
+    if(hasSerial) Serial.println("New client");
     bool currentLineIsBlank = true;
     String input = "";
     while (client.connected()) {
@@ -783,7 +789,7 @@ bool processOneRequest(){
           Request req = Request(input);
           //Serial.write(input.c_str());
           if(req.getPath() == "/"){
-            Serial.println("Root req, responding!");
+            if(hasSerial) Serial.println("Root req, responding!");
             client.println("HTTP/1.1 200 OK");
             client.println("Content-Type: text/html; charset=utf-8");
             client.println("Connection: close");
@@ -807,7 +813,7 @@ bool processOneRequest(){
             client.println(ftd(lastOutput.voc));
             client.println("</tr></table></body></html>");
           } else if(req.getPath() == "/state"){
-            Serial.println("State req, responding!");
+            if(hasSerial) Serial.println("State req, responding!");
             if(req.getVerb() == Verb::Get){
               client.println("HTTP/1.1 200 OK");
               client.println("Content-Type: text/html; charset=utf-8");
@@ -819,7 +825,7 @@ bool processOneRequest(){
                   client.println("ERROR</pre></body></html>");
                   break;
               } else {
-                Serial.println("Writing state to req");
+                if(hasSerial) Serial.println("Writing state to req");
                 for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
                 {
                     client.print(String(bsecState[i], HEX) + ", ");
@@ -828,7 +834,7 @@ bool processOneRequest(){
                 break;
               }
             } else if(req.getVerb() == Verb::Put){
-              Serial.println("Saving state based on on-demand Put");
+              if(hasSerial) Serial.println("Saving state based on on-demand Put");
               client.println("HTTP/1.1 200 OK");
               client.println("Content-Type: text/html; charset=utf-8");
               client.println("Connection: close");
@@ -849,7 +855,7 @@ bool processOneRequest(){
                 break;
               }
             } else if(req.getVerb() == Verb::Post){
-              Serial.println("Updating state from post body");
+              if(hasSerial) Serial.println("Updating state from post body");
             }
           } else if(req.getPath() == "/reset") {
             if(req.getVerb() == Verb::Post){
@@ -864,7 +870,7 @@ bool processOneRequest(){
             client.println("<!DOCTYPE HTML>");
             if(req.getVerb() == Verb::Post){
               client.println("<html><head></head><body>Resetting...<br>click <a href='/'>here</a> if you are not automatically redirected.</head></body></html>");
-              Serial.println("Reset POST request, the board is resetting NOW!");
+              if(hasSerial) Serial.println("Reset POST request, the board is resetting NOW!");
               resetBoard = true;
             } else {
               client.println("<html><head></head><body><p>Click the button below to reset the board</p><form action='/reset' method='post'><button type=submit>RESET BOARD</button></form></head></body></html>");
@@ -882,7 +888,7 @@ bool processOneRequest(){
     }
     delay(1);
     client.stop();
-    Serial.println("Client disconnected");
+    if(hasSerial) Serial.println("Client disconnected");
     if(resetBoard){
       rp2040.reboot();
     }
