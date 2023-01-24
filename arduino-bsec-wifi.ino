@@ -51,7 +51,7 @@ bool hasDisplay = false;
 /* end oled screen stuff */
 
 bool hasSerial = false;
-
+bool wifiApMode = false;
 
 
 
@@ -421,7 +421,7 @@ void setup(void)
   if(hasSerial) Serial.print("Attempting to connect to SSID: ");
   if(hasSerial) Serial.println(ssid);
 
-  const unsigned long connectionTimeout = 60L * 1000L;
+  const unsigned long connectionTimeout = 10L * 1000L;
   unsigned long startTime = millis();
   WiFi.begin(ssid, pass);
   while (WiFi.status() != WL_CONNECTED) {
@@ -432,7 +432,7 @@ void setup(void)
         display.display();
       }
       if(millis() - startTime > connectionTimeout){
-        //wifiApMode = true;
+        wifiApMode = true;
         WiFi.beginAP(apSSID);
         break;
       }
@@ -443,10 +443,15 @@ void setup(void)
   if(hasDisplay){
     display.clearDisplay();
     display.setCursor(0,0);             // Start at top-left corner
-    display.print(F("RSSI: "));
-    display.println(WiFi.RSSI());
-    display.print(F("SSID: "));
-    display.println(ssid);
+    if(wifiApMode){
+      display.print(F("AP SSID: "));
+      display.println(apSSID);
+    } else {
+      display.print(F("SSID: "));
+      display.println(ssid);
+      display.print(F("RSSI: "));
+      display.println(WiFi.RSSI());
+    }
     display.display();
     delay(2000);
     printWifiStatus();
