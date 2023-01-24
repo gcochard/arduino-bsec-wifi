@@ -658,7 +658,7 @@ void updateDisplay()
     display.print(F("P "));
     display.print(lastOutput.raw_pressure);
     display.println(F("inHg"));
-    WiFiMode_t mode = getMode();
+    WiFiMode_t mode = WiFi.getMode();
     if(mode == WiFiMode_t::WIFI_AP){
       display.print(F("AP SSID: "));
       display.print(WiFi.SSID());
