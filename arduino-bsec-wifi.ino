@@ -31,6 +31,7 @@
 #endif
 #include <WiFi.h>
 #include <WiFiClass.h>
+#include <WiFiClientSecure.h>
 
 /* oled screen stuff */
 #include <SPI.h>
@@ -70,8 +71,15 @@ int status = WL_IDLE_STATUS;
 #define STATE_SAVE_PERIOD UINT32_C(360 * 60 * 1000) /* 360 minutes - 4 times a day */
 #define PANIC_LED LED_BUILTIN
 #define ERROR_DUR 1000
+const unsigned long connectionTimeout = 10L * 1000L;
 
 /* Helper functions declarations */
+
+/**
+ * Display a spinner in the top right of the display
+ */
+void spin(void);
+
 /**
  * @brief : This function toggles the led continuously with one second delay
  */
@@ -133,6 +141,38 @@ static uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE];
 const String gasName[] = { "Field Air", "Hand sanitizer", "Undefined 3", "Undefined 4"};
 
 WiFiServer server(80);
+
+#ifdef TLS
+#include <WebServerSecure.h>
+WebServerSecure tlsserver(443);
+ServerSessions serverCache(5);
+#endif
+
+
+void connectToWifi(){
+  // attempt to connect to Wifi network:
+  if(hasSerial) Serial.print("Attempting to connect to SSID: ");
+  if(hasSerial) Serial.println(ssid);
+
+  unsigned long startTime = millis();
+  WiFi.begin(ssid, pass);
+  wifiApMode = false;
+  while (WiFi.status() != WL_CONNECTED) {
+      spin();
+      delay(500);
+      if(hasSerial) Serial.print(".");
+      if(hasDisplay){
+        display.print(".");
+        display.display();
+      }
+      if(millis() - startTime > connectionTimeout){
+        wifiApMode = true;
+        WiFi.beginAP(apSSID);
+        break;
+      }
+  }
+
+}
 
 enum class Verb { Get, Put, Post, Delete, Head, Invalid };
 
@@ -417,26 +457,7 @@ void setup(void)
             + String(envSensor.version.major_bugfix) + "." \
             + String(envSensor.version.minor_bugfix));
 
-  // attempt to connect to Wifi network:
-  if(hasSerial) Serial.print("Attempting to connect to SSID: ");
-  if(hasSerial) Serial.println(ssid);
-
-  const unsigned long connectionTimeout = 10L * 1000L;
-  unsigned long startTime = millis();
-  WiFi.begin(ssid, pass);
-  while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      if(hasSerial) Serial.print(".");
-      if(hasDisplay){
-        display.print(".");
-        display.display();
-      }
-      if(millis() - startTime > connectionTimeout){
-        wifiApMode = true;
-        WiFi.beginAP(apSSID);
-        break;
-      }
-  }
+  connectToWifi();
 
   if(hasSerial) Serial.println("");
   if(hasSerial) Serial.println("Connected to WiFi");
@@ -458,6 +479,20 @@ void setup(void)
   }
 
   server.begin();
+
+  // and now handle TLS
+  tlsserver.getServer().setRSACert(new BearSSL::X509List(serverCert), new BearSSL::PrivateKey(serverKey));
+  // Cache SSL sessions to accelerate the TLS handshake.
+  tlsserver.getServer().setCache(&serverCache);
+
+  tlsserver.on("/", []() {
+    tlsserver.send(200, "text/plain", "Hello TLS!");
+  });
+  tlsserver.onNotFound([]() {
+    tlsserver.send(404, "text/plain", "Not found!");
+  });
+
+  tlsserver.begin();
 }
 
 int bsecRetries = 0;
@@ -477,7 +512,13 @@ void loop(void)
       delay(100);
     }
     processOneRequest();
-    //if(WiFi.
+    int status = WiFi.status();
+    WiFiMode_t mode = WiFi.getMode();
+    if(mode != WiFiMode_t::WIFI_AP && status != WL_CONNECTED){
+      // reconnect? switch to AP mode?
+      if(hasSerial) Serial.println("WiFi disconnected!");
+      connectToWifi();
+    }
 }
 
 void errLeds(int bsecStatus, int bsecSensorStatus)
@@ -521,6 +562,25 @@ void updateBsecState(Bsec2 bsec)
 
     if (update && !saveState(bsec))
         checkBsecStatus(bsec);
+}
+
+String statusSpinner[] = {"/", "/", "-", "-", "\\", "\\", "|", "|" };
+int statusNum = 0;
+int statusSize = 8;
+
+void spin(){
+    display.setCursor(122,0);
+    if(statusNum % 2 == 0) {
+      display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+    } else {
+      display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+    }
+    display.print(statusSpinner[statusNum++]);
+    display.display();
+    if(statusNum >= statusSize){
+      statusNum = 0;
+    }
+    display.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
 }
 
 void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bsec)
@@ -615,10 +675,15 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
                 break;
         }
     }
-
+    spin();
     updateBsecState(envSensor);
 }
-
+/*
+void updateGrafana()
+{
+  WiFiClientSecure client = WiFiClientSecure();
+}
+*/
 void updateDisplay()
 {
   
@@ -627,59 +692,69 @@ void updateDisplay()
     display.setCursor(0,0);             // Start at top-left corner
     // AQI and CI are 15-16 chars wide
     display.print(F("AQ "));
-    int aqi = int(lastOutput.air_quality);
+    int aqi = round(lastOutput.air_quality);
     if(aqi < 51) {        //   0-50  == GOOD
-      display.print("Good");
+      display.print("Good (");
     } else if(aqi < 101){ // 51-100  == Moderate
-      display.print("Mod ");
+      display.print("Mod  (");
     } else if(aqi < 151){ // 101-150 == Unhealthy for sensitive groups
-      display.print("USG ");
+      display.print("USG  (");
     } else if(aqi < 201){ // 151-200 == Unhealthy
-      display.print("U/H ");
+      display.print("U/H  (");
     } else if(aqi < 301){ // 201-300 == Very unhealthy
-      display.print("VU/H");
+      display.print("VU/H (");
     } else {              // 301+    == Hazardous
-      display.print("HAZ!");
+      display.print("HAZ! (");
     }
+    display.print(aqi);
     //display.print(lastOutput.air_quality);
-    display.print(F("\tAcc "));
+    display.print(F(") \t A:"));
     int aqa = lastOutput.air_quality_accuracy;
+    display.println(aqa);
+    /*
     if(aqa == 3){
-      display.println(F("   High  "));
+      display.println(F("3"));
     } else if(aqa == 2){
-      display.println(F("    Med  "));
+      display.println(F("2"));
     } else if(aqa == 1) {
-      display.println(F("    Low  "));
+      display.println(F("1"));
     } else {
-      display.println(F("Stabilizn"));
-    }
+      display.println(F("0"));
+    }*/
     // Temp, humidity are 17-18 wide
-    display.print(F("T "));
-    display.print(lastOutput.comp_temp);
-    display.print(F("*F"));
-    display.print(F(" \t H "));
-    display.print(lastOutput.comp_humidity);
-    display.println(F("%"));
-    display.print(F("P "));
+    display.print(int(round(lastOutput.comp_temp)));
+    display.print(F("F "));
+    display.print(int(round(lastOutput.comp_humidity)));
+    display.print(F("% "));
     display.print(lastOutput.raw_pressure);
     display.println(F("inHg"));
+    display.print(F("CO2 "));
+    display.print(int(lastOutput.eco2));
+    display.print(F(" \t VOC "));
+    display.println(lastOutput.voc);
     WiFiMode_t mode = WiFi.getMode();
     if(mode == WiFiMode_t::WIFI_AP){
       display.print(F("AP SSID: "));
       display.print(WiFi.SSID());
     } else {
-      display.print(F("WIFI signal: ")); // 13 chars
-    
-      long rs = WiFi.RSSI();
-      rs *= -1;
-      if(rs < 70){
-        display.print(F(" GOOD"));
-      } else if(rs < 80){
-        display.print(F(" OKAY"));
-      } else if(rs < 90){
-        display.print(F(" POOR"));
+      int status = WiFi.status();
+      if(status != WL_CONNECTED){
+        display.print(F("WiFi D/C"));
       } else {
-        display.print(F("AWFUL"));
+        display.print(F("WiFi signal: ")); // 13 chars
+        long rs = WiFi.RSSI();
+        rs *= -1;
+        if(rs == 0) {
+          display.print(F("  D/C"));
+        } else if(rs < 70){
+          display.print(F(" GOOD"));
+        } else if(rs < 80){
+          display.print(F(" OKAY"));
+        } else if(rs < 90){
+          display.print(F(" POOR"));
+        } else {
+          display.print(F("AWFUL"));
+        }
       }
     }
     display.display();
@@ -780,6 +855,7 @@ void printWifiStatus() {
 
 bool processOneRequest(){
   bool resetBoard = false;
+  bool reconnectWifi = false;
   String resp = "<table><tr><th>Timestamp [ms]</th><th>raw temperature [°F]</th><th>pressure [mmHg]</th><th>raw relative humidity [%]</th><th>gas [Ohm]</th><th>IAQ</th><th>IAQ accuracy</th><th>temperature [°F]</th><th>relative humidity [%]</th><th>Static IAQ</th><th>CO2 equivalent</th><th>breath VOC equivalent</tr>\n";
   WiFiClient client = server.available();
   if (client) {
@@ -880,6 +956,25 @@ bool processOneRequest(){
             } else {
               client.println("<html><head></head><body><p>Click the button below to reset the board</p><form action='/reset' method='post'><button type=submit>RESET BOARD</button></form></head></body></html>");
             }
+          } else if(req.getPath() == "/reconnect") {
+            if(req.getVerb() == Verb::Post){
+              client.println("HTTP/1.1 303 See Other");
+              client.println("Location: /");
+              client.println("");
+              client.println("<!DOCTYPE HTML>");
+              client.println("<html><head></head><body>Resetting...<br>click <a href='/'>here</a> if you are not automatically redirected.</head></body></html>");
+              if(hasSerial) Serial.println("Reset POST request, the board is resetting NOW!");
+              // reconnect to wifi
+              
+              reconnectWifi = true;
+            } else {
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-Type: text/html; charset=utf-8");
+              client.println("");
+              client.println("<!DOCTYPE HTML>");
+              client.println("<html><head></head><body><p>Click the button below to reset the Wifi connection</p><form action='/reconnect' method='post'><button type=submit>Reconnect Wifi</button></form></head></body></html>");
+              
+            }
           }
 
           break;
@@ -896,6 +991,9 @@ bool processOneRequest(){
     if(hasSerial) Serial.println("Client disconnected");
     if(resetBoard){
       rp2040.reboot();
+    }
+    if(reconnectWifi){
+      connectToWifi();
     }
     return true;
   }
