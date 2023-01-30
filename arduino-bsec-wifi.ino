@@ -368,6 +368,10 @@ String ltd(long in){
   return "<td>"+String(in)+"</td>";
 }
 
+void root(void) {
+    if(hasSerial) Serial.println("Got a TLS request!");
+    tlsserver.send(200, "text/plain", "Hello TLS!");
+};
 
 
 /* Entry point for the example */
@@ -480,19 +484,25 @@ void setup(void)
 
   server.begin();
 
+#ifdef TLS
+  if(hasSerial) Serial.println("Setting up TLS server");
   // and now handle TLS
-  tlsserver.getServer().setRSACert(new BearSSL::X509List(serverCert), new BearSSL::PrivateKey(serverKey));
+  tlsserver.getServer().setECCert(new BearSSL::X509List(serverCert), BR_KEYTYPE_KEYX | BR_KEYTYPE_SIGN, new BearSSL::PrivateKey(serverKey));
   // Cache SSL sessions to accelerate the TLS handshake.
   tlsserver.getServer().setCache(&serverCache);
-
+/*
   tlsserver.on("/", []() {
+    if(hasSerial) Serial.println("Got a TLS request!");
     tlsserver.send(200, "text/plain", "Hello TLS!");
   });
   tlsserver.onNotFound([]() {
+    if(hasSerial) Serial.println("Got an unknown TLS request!");
     tlsserver.send(404, "text/plain", "Not found!");
   });
-
+*/
   tlsserver.begin();
+#endif
+
 }
 
 int bsecRetries = 0;
@@ -511,6 +521,9 @@ void loop(void)
       bsecRetries++;
       delay(100);
     }
+#ifdef TLS
+    //tlsserver.handleClient();
+#endif
     processOneRequest();
     int status = WiFi.status();
     WiFiMode_t mode = WiFi.getMode();
@@ -858,6 +871,12 @@ bool processOneRequest(){
   bool reconnectWifi = false;
   String resp = "<table><tr><th>Timestamp [ms]</th><th>raw temperature [°F]</th><th>pressure [mmHg]</th><th>raw relative humidity [%]</th><th>gas [Ohm]</th><th>IAQ</th><th>IAQ accuracy</th><th>temperature [°F]</th><th>relative humidity [%]</th><th>Static IAQ</th><th>CO2 equivalent</th><th>breath VOC equivalent</tr>\n";
   WiFiClient client = server.available();
+#ifdef TLS
+  if(!client){
+    //if(hasSerial) Serial.println("Trying tls...");
+    client = tlsserver.getServer().available();
+  }
+#endif
   if (client) {
     if(hasSerial) Serial.println("New client");
     bool currentLineIsBlank = true;
