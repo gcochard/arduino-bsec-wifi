@@ -32,6 +32,7 @@
 #include <WiFi.h>
 #include <WiFiClass.h>
 #include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 
 /* oled screen stuff */
 #include <SPI.h>
@@ -110,7 +111,7 @@ void updateDisplay(void);
 /**
  * Process an HTTP request if there is one pending
  */
-bool processOneRequest(void);
+bool processOneRequest(WiFiClient&);
 
 /**
  * @brief : This function is called by the BSEC library when a new output is available
@@ -143,8 +144,8 @@ const String gasName[] = { "Field Air", "Hand sanitizer", "Undefined 3", "Undefi
 WiFiServer server(80);
 
 #ifdef TLS
-#include <WebServerSecure.h>
-WebServerSecure tlsserver(443);
+#include <WiFiServerSecure.h>
+WiFiServerSecure tlsserver(443);
 ServerSessions serverCache(5);
 #endif
 
@@ -184,6 +185,7 @@ typedef struct
   float raw_gas;
   float raw_gas_index;
   float comp_temp;
+  float comp_temp_c;
   float comp_humidity;
   float run_in_status;
   float stabilization_status;
@@ -288,7 +290,10 @@ class Request{
     int majorStart = versionstring.indexOf("/")+1;
     httpVersionMajor = versionstring.substring(majorStart,majorStart+1).toInt();
     httpVersionMinor = versionstring.substring(majorStart+2,majorStart+3).toInt();
-    if(hasSerial) Serial.println("HTTP request parsed. Verb: " + verbStr + "\n\tPath: " + String(path) + "\n\tVersion: " + String(httpVersionMajor) + "." + String(httpVersionMinor));
+    if(hasSerial) Serial.println("HTTP request parsed. Verb: " + verbStr + 
+                                  "\n\tPath: " + String(path) + 
+                                  "\n\tVersion: " + String(httpVersionMajor) + 
+                                  "." + String(httpVersionMinor));
     rest = rest.substring(rest.indexOf('\n')+1);
     int headerEnd = rest.indexOf("\n\n");
     String tmp;
@@ -367,12 +372,6 @@ String itd(int in){
 String ltd(long in){
   return "<td>"+String(in)+"</td>";
 }
-
-void root(void) {
-    if(hasSerial) Serial.println("Got a TLS request!");
-    tlsserver.send(200, "text/plain", "Hello TLS!");
-};
-
 
 /* Entry point for the example */
 void setup(void)
@@ -487,23 +486,77 @@ void setup(void)
 #ifdef TLS
   if(hasSerial) Serial.println("Setting up TLS server");
   // and now handle TLS
-  tlsserver.getServer().setECCert(new BearSSL::X509List(serverCert), BR_KEYTYPE_KEYX | BR_KEYTYPE_SIGN, new BearSSL::PrivateKey(serverKey));
+#if defined(TLS_ECC)
+  tlsserver.setECCert(new BearSSL::X509List(serverCert), BR_KEYTYPE_KEYX | BR_KEYTYPE_SIGN, new BearSSL::PrivateKey(serverKey));
+#else
+  tlsserver.setRSACert(new BearSSL::X509List(serverCert), new BearSSL::PrivateKey(serverKey));
+#endif
   // Cache SSL sessions to accelerate the TLS handshake.
-  tlsserver.getServer().setCache(&serverCache);
-/*
-  tlsserver.on("/", []() {
-    if(hasSerial) Serial.println("Got a TLS request!");
-    tlsserver.send(200, "text/plain", "Hello TLS!");
-  });
-  tlsserver.onNotFound([]() {
-    if(hasSerial) Serial.println("Got an unknown TLS request!");
-    tlsserver.send(404, "text/plain", "Not found!");
-  });
-*/
+  tlsserver.setCache(&serverCache);
   tlsserver.begin();
 #endif
 
 }
+
+#if defined(HOMEBRIDGE)
+
+  bool updateHb(HTTPClient& client, String devId, long val) {
+    bool ret = false;
+    client.begin("http://"+String(homebridgeHost)+":"+String(webhookPort)+"/?accessoryId="+devId+"&value="+val);
+    int statusCode = client.GET();
+    if(statusCode > 0){
+      // no error
+      if(statusCode == HTTP_CODE_OK || statusCode == HTTP_CODE_MOVED_PERMANENTLY) {
+        //if(hasSerial) Serial.println("Got response: "+client.getString());
+        ret = true;
+      }
+      else {
+        if(hasSerial) Serial.println("Status != 200 or 301: " + String(statusCode));
+      }
+    } else {
+      if(hasSerial) Serial.println("Error making GET: " + client.errorToString(statusCode));
+    }
+    client.end();
+    return ret;
+  }
+
+  bool postTemp(HTTPClient& client) {
+    return updateHb(client, tempSensorId, lastOutput.comp_temp_c);
+  }
+
+  bool postHumidity(HTTPClient& client) {
+    return updateHb(client, humiditySensorId, lastOutput.comp_humidity);
+  }
+
+  bool postAqi(HTTPClient& client) {
+    if(lastOutput.air_quality_accuracy > 1){
+      int aqi = lastOutput.air_quality / 50;
+      // basic thresholds are 1-50, 50-100, 101-150, 151-200, 200+
+      aqi += 1;
+      if(aqi>5) aqi=5;
+      return updateHb(client, aqiSensorId, aqi);
+    }
+    return false;
+  }
+
+  HTTPClient http;
+  int updateInterval = 30 * 1000;
+  long lastUpdate = 0;
+  void updateHomebridge() {
+    long now = millis();
+    if(now > lastUpdate + updateInterval){
+      lastUpdate = now;
+      postTemp(http);
+      postHumidity(http);
+      postAqi(http);
+    }
+  }
+
+#else
+  // no-op
+  void updateHomebridge() { }
+
+#endif
 
 int bsecRetries = 0;
 /* Function that is looped forever */
@@ -521,10 +574,14 @@ void loop(void)
       bsecRetries++;
       delay(100);
     }
+    updateHomebridge();
+
+    WiFiClient client = server.accept();
+    processOneRequest(client);
 #ifdef TLS
-    //tlsserver.handleClient();
+    WiFiClientSecure clients = tlsserver.accept();
+    processOneRequest(clients);
 #endif
-    processOneRequest();
     int status = WiFi.status();
     WiFiMode_t mode = WiFi.getMode();
     if(mode != WiFiMode_t::WIFI_AP && status != WL_CONNECTED){
@@ -668,6 +725,7 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
                 if(hasSerial) Serial.println("\tcompensated temperature = " + String(output.signal * 9 / 5 + 32) + "°F" + ", accuracy: " + String(output.accuracy));
                 lastOutput.comp_temp = output.signal * 9 / 5 + 32;
+                lastOutput.comp_temp_c = output.signal;
                 break;
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
                 if(hasSerial) Serial.println("\tcompensated humidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
@@ -691,12 +749,7 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
     spin();
     updateBsecState(envSensor);
 }
-/*
-void updateGrafana()
-{
-  WiFiClientSecure client = WiFiClientSecure();
-}
-*/
+
 void updateDisplay()
 {
   
@@ -866,17 +919,10 @@ void printWifiStatus() {
   if(hasSerial) Serial.println(" dBm");
 }
 
-bool processOneRequest(){
+bool processOneRequest(WiFiClient &client){
   bool resetBoard = false;
   bool reconnectWifi = false;
   String resp = "<table><tr><th>Timestamp [ms]</th><th>raw temperature [°F]</th><th>pressure [mmHg]</th><th>raw relative humidity [%]</th><th>gas [Ohm]</th><th>IAQ</th><th>IAQ accuracy</th><th>temperature [°F]</th><th>relative humidity [%]</th><th>Static IAQ</th><th>CO2 equivalent</th><th>breath VOC equivalent</tr>\n";
-  WiFiClient client = server.available();
-#ifdef TLS
-  if(!client){
-    //if(hasSerial) Serial.println("Trying tls...");
-    client = tlsserver.getServer().available();
-  }
-#endif
   if (client) {
     if(hasSerial) Serial.println("New client");
     bool currentLineIsBlank = true;
