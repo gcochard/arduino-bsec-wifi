@@ -439,6 +439,8 @@ void setup(void)
         checkBsecStatus (envSensor);
     }
 
+    envSensor.setTemperatureOffset(temperatureOffset);
+
     /* Copy state from the EEPROM to the algorithm */
     if (!loadState(envSensor))
     {

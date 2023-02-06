@@ -1,8 +1,8 @@
 #if !defined(secrets_h)
 #define secrets_h
 // Enter your WiFi SSID and password
-char ssid[] = "your-ssid"; // network SSID (name)
-char pass[] = "your-super-secure-password"; // WPA network password
+const char ssid[] = "your-ssid"; // network SSID (name)
+const char pass[] = "your-super-secure-password"; // WPA network password
 
 /**
  * If you would like to update an apple home temperature "sensor"
@@ -10,11 +10,16 @@ char pass[] = "your-super-secure-password"; // WPA network password
  * define these constants
  */
 #define HOMEBRIDGE
-static const char homebridgeHost[] = "192.168.192.168";
-static const char webhookPort[] = "51828";
-static const char aqiSensorId[] = "aqi";
-static const char humiditySensorId[] = "humidity";
-static const char tempSensorId[] = "temp";
+const char homebridgeHost[] = "192.168.192.168";
+const char webhookPort[] = "51828";
+const char aqiSensorId[] = "aqi";
+const char humiditySensorId[] = "humidity";
+const char tempSensorId[] = "temp";
+
+/**
+ * If you have a calibrated thermometer, use it to determine the temp offset (in c)
+ */
+const float temperatureOffset = 0.5;
 
 /**
  * If you would like to serve the web server over TLS in 
@@ -26,7 +31,7 @@ static const char tempSensorId[] = "temp";
 #define TLS
 // SSL certificate
 #define TLS_ECC
-static const char serverCert[] PROGMEM = R"EOF(
+const char serverCert[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 ...
 -----END CERTIFICATE-----
@@ -38,7 +43,7 @@ static const char serverCert[] PROGMEM = R"EOF(
 -----END CERTIFICATE-----
 )EOF";
 
-static const char serverKey[] PROGMEM = R"EOF(
+const char serverKey[] PROGMEM = R"EOF(
 -----BEGIN PRIVATE KEY-----
 ...
 -----END PRIVATE KEY-----
