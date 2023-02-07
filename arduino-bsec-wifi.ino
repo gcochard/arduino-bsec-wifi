@@ -921,6 +921,21 @@ void printWifiStatus() {
   if(hasSerial) Serial.println(" dBm");
 }
 
+void printHead(WiFiClient &client, int statusCode, String contentType) {
+    client.println("HTTP/1.1 "+String(statusCode)+" OK");
+    client.println("Content-Type: "+contentType+"; charset=utf-8");
+    client.println("Connection: close");
+    client.println();
+}
+
+String metric(String key, int val) {
+  return key + "{group=\"environment\", location=\"mbr\"} " + val + "\n";
+}
+
+String metric(String key, float val) {
+  return key + "{group=\"environment\", location=\"mbr\"} " + val + "\n";
+}
+
 bool processOneRequest(WiFiClient &client){
   bool resetBoard = false;
   bool reconnectWifi = false;
@@ -938,10 +953,7 @@ bool processOneRequest(WiFiClient &client){
           //Serial.write(input.c_str());
           if(req.getPath() == "/"){
             if(hasSerial) Serial.println("Root req, responding!");
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-Type: text/html; charset=utf-8");
-            client.println("Connection: close");
-            client.println();
+            printHead(client, 200, "text/html");
             client.println("<!DOCTYPE HTML>");
             client.println("<html><head></head><body>");
             unsigned long time_trigger = millis();
@@ -963,10 +975,7 @@ bool processOneRequest(WiFiClient &client){
           } else if(req.getPath() == "/state"){
             if(hasSerial) Serial.println("State req, responding!");
             if(req.getVerb() == Verb::Get){
-              client.println("HTTP/1.1 200 OK");
-              client.println("Content-Type: text/html; charset=utf-8");
-              client.println("Connection: close");
-              client.println();
+              printHead(client, 200, "text/html");
               client.println("<!DOCTYPE HTML>");
               client.println("<html><head></head><body><pre>");
               if (!envSensor.getState(bsecState)){
@@ -983,11 +992,7 @@ bool processOneRequest(WiFiClient &client){
               }
             } else if(req.getVerb() == Verb::Put){
               if(hasSerial) Serial.println("Saving state based on on-demand Put");
-              client.println("HTTP/1.1 200 OK");
-              client.println("Content-Type: text/html; charset=utf-8");
-              client.println("Connection: close");
-              client.println();
-              
+              printHead(client, 200, "text/html");
               client.println("<!DOCTYPE HTML>");
               client.println("<html><head></head><body>");
               if(!saveState(envSensor)){
@@ -1035,13 +1040,23 @@ bool processOneRequest(WiFiClient &client){
               
               reconnectWifi = true;
             } else {
-              client.println("HTTP/1.1 200 OK");
-              client.println("Content-Type: text/html; charset=utf-8");
-              client.println("");
+              printHead(client, 200, "text/html");
               client.println("<!DOCTYPE HTML>");
               client.println("<html><head></head><body><p>Click the button below to reset the Wifi connection</p><form action='/reconnect' method='post'><button type=submit>Reconnect Wifi</button></form></head></body></html>");
-              
             }
+          } else if(req.getPath() == "/metrics") {
+            printHead(client, 200, "text/plain");
+            client.print(metric("rawtemp", lastOutput.raw_temp));
+            client.print(metric("pressure", lastOutput.raw_pressure));
+            client.print(metric("rawhumidity", lastOutput.raw_humidity));
+            client.print(metric("rawgas", lastOutput.raw_gas));
+            client.print(metric("aqi", lastOutput.air_quality));
+            client.print(metric("aqi_accuracy", lastOutput.air_quality_accuracy));
+            client.print(metric("temperatureF", lastOutput.comp_temp));
+            client.print(metric("humidity", lastOutput.comp_humidity));
+            client.print(metric("static_aqi", lastOutput.static_air_quality));
+            client.print(metric("eco2", lastOutput.eco2));
+            client.print(metric("tvoc", lastOutput.voc));
           }
 
           break;
