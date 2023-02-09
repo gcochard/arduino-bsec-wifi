@@ -3,23 +3,35 @@
 // Enter your WiFi SSID and password
 const char ssid[] = "your-ssid"; // network SSID (name)
 const char pass[] = "your-super-secure-password"; // WPA network password
+const char  apSSID[] = "your-BSEC"; // AP fallback network SSID
 
+/**
+ * For prometheus and homebridge
+ */
+const String metricLocation = "office";
 /**
  * If you would like to update an apple home temperature "sensor"
  * emulated by https://github.com/benzman81/homebridge-http-webhooks,
  * define these constants
  */
 #define HOMEBRIDGE
-const char homebridgeHost[] = "192.168.192.168";
-const char webhookPort[] = "51828";
-const char aqiSensorId[] = "aqi";
-const char humiditySensorId[] = "humidity";
-const char tempSensorId[] = "temp";
+const String homebridgeHost = "192.168.192.168";
+const String webhookPort = "51828";
+const String aqiSensorId = metricLocation + "aqi";
+const String humiditySensorId = metricLocation + "humidity";
+const String tempSensorId = metricLocation + "temp";
+
+
+
 
 /**
- * If you have a calibrated thermometer, use it to determine the temp offset (in c)
+ * If you have a calibrated thermometer, use it to determine the temp offset (in C)
  */
 const float temperatureOffset = 0.5;
+/**
+ * If you have a calibrated barometer, use it to determine the pressure offset (in inHg)
+ */
+const float pressureOffset = 0.56;
 
 /**
  * If you would like to serve the web server over TLS in 

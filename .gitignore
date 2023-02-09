@@ -13,6 +13,7 @@ hardware/arduino/bootloaders/caterina_LUFA/Caterina.lss
 hardware/arduino/bootloaders/caterina_LUFA/Caterina.elf
 hardware/arduino/bootloaders/caterina_LUFA/Caterina.eep
 hardware/arduino/bootloaders/caterina_LUFA/.dep/
+build/
 build/*.zip
 build/*.tar.bz2
 build/windows/work/
@@ -69,3 +70,4 @@ manifest.mf
 nbbuild.xml
 nbproject
 secrets.h
+*.uf2
