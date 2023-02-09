@@ -34,7 +34,6 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
-#include <LittleFS.h>
 #include <ArduinoOTA.h>
 
 /* oled screen stuff */
@@ -62,6 +61,7 @@ bool wifiApMode = false;
 
 // Enter your WiFi SSID and password
 #include "secrets.h"
+#include "settings.h"
 
 int status = WL_IDLE_STATUS;
 #include <bsec2.h>
@@ -74,7 +74,6 @@ int status = WL_IDLE_STATUS;
 #define STATE_SAVE_PERIOD UINT32_C(360 * 60 * 1000) /* 360 minutes - 4 times a day */
 #define PANIC_LED LED_BUILTIN
 #define ERROR_DUR 1000
-const unsigned long connectionTimeout = 10L * 1000L;
 
 /* Helper functions declarations */
 
@@ -153,27 +152,47 @@ WiFiServerSecure tlsserver(443);
 ServerSessions serverCache(5);
 #endif
 
+String currentSsid = ssid;
+String currentPass = pass;
+String metricLocation = defaultMetricLocation;
+
+void print(String val){
+  if(hasSerial){
+    Serial.print(val);
+  }
+}
+
+void println(String val){
+  print(val+"\n");
+}
 
 void connectToWifi(){
   // attempt to connect to Wifi network:
-  if(hasSerial) Serial.print("Attempting to connect to SSID: ");
-  if(hasSerial) Serial.println(ssid);
+  println("Attempting to connect to SSID: "+currentSsid+" with password: "+currentPass);
 
   unsigned long startTime = millis();
-  WiFi.begin(ssid, pass);
+  WiFi.begin(currentSsid.c_str(), currentPass.c_str());
   wifiApMode = false;
+  bool wifiFallback = false;
   while (WiFi.status() != WL_CONNECTED) {
+      unsigned int stat = WiFi.status();
       spin();
       delay(500);
-      if(hasSerial) Serial.print(".");
+      print(".");
+      print(String(WiFi.status()));
       if(hasDisplay){
         display.print(".");
         display.display();
       }
-      if(millis() - startTime > connectionTimeout){
+      if(millis() - startTime > connectionTimeout && wifiFallback){
         wifiApMode = true;
-        WiFi.beginAP(apSSID);
+        currentSsid = apSSID;
+        WiFi.beginAP(currentSsid.c_str());
         break;
+      } else if(millis() - startTime > connectionTimeout && stat == WL_CONNECT_FAILED){
+        wifiFallback = true;
+        println(String("\nFalling back to header-defined defaults, SSID: ")+ssid+" and password: "+pass);
+        WiFi.begin(ssid, pass);
       }
   }
 
@@ -223,6 +242,7 @@ String ltd(long in){
   return "<td>"+String(in)+"</td>";
 }
 
+Settings settings(hasSerial);
 /* Entry point for the example */
 void setup(void)
 {
@@ -262,7 +282,7 @@ void setup(void)
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    //if(hasSerial) Serial.println(F("SSD1306 allocation successful"));
+    //println(F("SSD1306 allocation successful"));
     hasDisplay = true;
     display.display();
     display.clearDisplay();
@@ -280,6 +300,7 @@ void setup(void)
 
     if(Serial.availableForWrite()){
       hasSerial = true;
+      settings.setHasSerial(true);
     }
 
     
@@ -292,10 +313,10 @@ void setup(void)
     }
 
     // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-    if(hasSerial) Serial.println("Start updating " + type);
+    println("Start updating " + type);
   });
   ArduinoOTA.onEnd([]() {
-    if(hasSerial) Serial.println("\nEnd");
+    println("\nEnd");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     if(hasSerial) Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
@@ -303,15 +324,15 @@ void setup(void)
   ArduinoOTA.onError([](ota_error_t error) {
     if(hasSerial) Serial.printf("Error[%u]: ", error);
     if (error == OTA_AUTH_ERROR) {
-      if(hasSerial) Serial.println("Auth Failed");
+      println("Auth Failed");
     } else if (error == OTA_BEGIN_ERROR) {
-      if(hasSerial) Serial.println("Begin Failed");
+      println("Begin Failed");
     } else if (error == OTA_CONNECT_ERROR) {
-      if(hasSerial) Serial.println("Connect Failed");
+      println("Connect Failed");
     } else if (error == OTA_RECEIVE_ERROR) {
-      if(hasSerial) Serial.println("Receive Failed");
+      println("Receive Failed");
     } else if (error == OTA_END_ERROR) {
-      if(hasSerial) Serial.println("End Failed");
+      println("End Failed");
     }
   });
   
@@ -347,16 +368,18 @@ void setup(void)
     /* Whenever new data is available call the newDataCallback function */
     envSensor.attachCallback(newDataCallback);
 
-    if(hasSerial) Serial.println("\nBSEC library version " + \
+    println("\nBSEC library version " + \
             String(envSensor.version.major) + "." \
             + String(envSensor.version.minor) + "." \
             + String(envSensor.version.major_bugfix) + "." \
             + String(envSensor.version.minor_bugfix));
-
+  settings.getWifiSettings(currentSsid, currentPass);
+  println("Current SSID: "+currentSsid+"\ncurrentPass: "+currentPass);
+  settings.getLocation(metricLocation);
   connectToWifi();
 
-  if(hasSerial) Serial.println("");
-  if(hasSerial) Serial.println("Connected to WiFi");
+  println("");
+  println("Connected to WiFi");
   if(hasDisplay){
     display.clearDisplay();
     display.setCursor(0,0);             // Start at top-left corner
@@ -378,7 +401,7 @@ void setup(void)
   server.begin();
 
 #ifdef TLS
-  if(hasSerial) Serial.println("Setting up TLS server");
+  println("Setting up TLS server");
   // and now handle TLS
 #if defined(TLS_ECC)
   tlsserver.setECCert(new BearSSL::X509List(serverCert), BR_KEYTYPE_KEYX | BR_KEYTYPE_SIGN, new BearSSL::PrivateKey(serverKey));
@@ -402,25 +425,25 @@ void setup(void)
     if(statusCode > 0){
       // no error
       if(statusCode == HTTP_CODE_OK || statusCode == HTTP_CODE_MOVED_PERMANENTLY) {
-        //if(hasSerial) Serial.println("Got response: "+client.getString());
+        //println("Got response: "+client.getString());
         ret = true;
       }
       else {
-        if(hasSerial) Serial.println("Status != 200 or 301: " + String(statusCode));
+        println("Status != 200 or 301: " + String(statusCode)+"\n\t"+uri);
       }
     } else {
-      if(hasSerial) Serial.println("Error making GET: " + client.errorToString(statusCode) + "\n\t" + uri);
+      println("Error making GET: " + client.errorToString(statusCode) + "\n\t" + uri);
     }
     client.end();
     return ret;
   }
 
   bool postTemp(HTTPClient& client) {
-    return updateHb(client, tempSensorId, committedOutput.comp_temp_c);
+    return updateHb(client, String(metricLocation) + tempSensorId, committedOutput.comp_temp_c);
   }
 
   bool postHumidity(HTTPClient& client) {
-    return updateHb(client, humiditySensorId, committedOutput.comp_humidity);
+    return updateHb(client, String(metricLocation) + humiditySensorId, committedOutput.comp_humidity);
   }
 
   bool postAqi(HTTPClient& client) {
@@ -429,7 +452,7 @@ void setup(void)
       // basic thresholds are 1-50, 50-100, 101-150, 151-200, 200+
       aqi += 1;
       if(aqi>5) aqi=5;
-      return updateHb(client, aqiSensorId, aqi);
+      return updateHb(client, String(metricLocation) + aqiSensorId, aqi);
     }
     return false;
   }
@@ -483,7 +506,7 @@ void loop(void)
     WiFiMode_t mode = WiFi.getMode();
     if(mode != WiFiMode_t::WIFI_AP && status != WL_CONNECTED){
       // reconnect? switch to AP mode?
-      if(hasSerial) Serial.println("WiFi disconnected!");
+      println("WiFi disconnected!");
       connectToWifi();
     }
 }
@@ -555,7 +578,7 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
     if (!outputs.nOutputs)
         return;
 
-    if(hasSerial) Serial.println("BSEC outputs:\n\ttimestamp = " + String((int) (outputs.output[0].time_stamp / INT64_C(1000000))));
+    println("BSEC outputs:\n\ttimestamp = " + String((int) (outputs.output[0].time_stamp / INT64_C(1000000))));
     for (uint8_t i = 0; i < outputs.nOutputs; i++)
     {
         const bsecData output  = outputs.output[i];
@@ -575,46 +598,46 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
             client.println(ftd(lastOutput.voc));
            */
             case BSEC_OUTPUT_RUN_IN_STATUS:
-                if(hasSerial) Serial.println("\tRun in status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tRun in status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 break;
             case BSEC_OUTPUT_STABILIZATION_STATUS:
-                if(hasSerial) Serial.println("\tStabilization status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tStabilization status = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 break;
             case BSEC_OUTPUT_IAQ:
-                if(hasSerial) Serial.println("\tIAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tIAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.air_quality = output.signal;
                 lastOutput.air_quality_accuracy = output.accuracy;
                 break;
             case BSEC_OUTPUT_STATIC_IAQ:
-                if(hasSerial) Serial.println("\tStatic IAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tStatic IAQ = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.static_air_quality = output.signal;
                 break;
             case BSEC_OUTPUT_CO2_EQUIVALENT:
-                if(hasSerial) Serial.println("\tCO2 equivalent = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tCO2 equivalent = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.eco2 = output.signal;
                 break;
             case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT:
-                if(hasSerial) Serial.println("\tbreath VOC = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tbreath VOC = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.voc = output.signal;
                 break;
             case BSEC_OUTPUT_RAW_TEMPERATURE:
                 lastOutput.raw_temp = output.signal * 9 / 5 + 32;
-                if(hasSerial) Serial.println("\ttemperature = " + String(lastOutput.raw_temp) + "°F" + ", accuracy: " + String(output.accuracy));
+                println("\ttemperature = " + String(lastOutput.raw_temp) + "°F" + ", accuracy: " + String(output.accuracy));
                 break;
             case BSEC_OUTPUT_RAW_PRESSURE:
                 lastOutput.raw_pressure = output.signal * 0.00029529983071445 + pressureOffset;
-                if(hasSerial) Serial.println("\tpressure = " + String(lastOutput.raw_pressure) + "inHg" + ", accuracy: " + String(output.accuracy));
+                println("\tpressure = " + String(lastOutput.raw_pressure) + "inHg" + ", accuracy: " + String(output.accuracy));
                 break;
             case BSEC_OUTPUT_RAW_HUMIDITY:
-                if(hasSerial) Serial.println("\thumidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
+                println("\thumidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
                 lastOutput.raw_humidity = output.signal;
                 break;
             case BSEC_OUTPUT_RAW_GAS:
-                if(hasSerial) Serial.println("\tgas resistance = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tgas resistance = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 lastOutput.raw_gas = output.signal;
                 break;
             case BSEC_OUTPUT_RAW_GAS_INDEX:
-                if(hasSerial) Serial.println("\tgas index = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
+                println("\tgas index = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
                 if(int(output.signal) == 9){
                   updateDisplay();
                   commitLast();
@@ -623,10 +646,10 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
                 lastOutput.comp_temp = output.signal * 9 / 5 + 32;
                 lastOutput.comp_temp_c = output.signal;
-                if(hasSerial) Serial.println("\tcompensated temperature = " + String(lastOutput.comp_temp) + "°F" + ", accuracy: " + String(output.accuracy));
+                println("\tcompensated temperature = " + String(lastOutput.comp_temp) + "°F" + ", accuracy: " + String(output.accuracy));
                 break;
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
-                if(hasSerial) Serial.println("\tcompensated humidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
+                println("\tcompensated humidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
                 lastOutput.comp_humidity = output.signal;
                 break;
             case BSEC_OUTPUT_GAS_ESTIMATE_1:
@@ -635,7 +658,7 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
             case BSEC_OUTPUT_GAS_ESTIMATE_4:
                 if((int)(output.signal * 10000.0f) > 0) /* Ensure that there is a valid value xx.xx% */
                 {
-                    if(hasSerial) Serial.println("\t" + \
+                    println("\t" + \
                       gasName[(int) (output.sensor_id - BSEC_OUTPUT_GAS_ESTIMATE_1)] + \
                       String(" probability : ") + String(output.signal * 100) + "%");
                 }
@@ -731,20 +754,20 @@ void checkBsecStatus(Bsec2 bsec)
 {
     if (bsec.status < BSEC_OK)
     {
-        if(hasSerial) Serial.println("BSEC error code : " + String(bsec.status));
+        println("BSEC error code : " + String(bsec.status));
         errLeds(bsec.status, 0); /* Halt in case of failure */
     } else if (bsec.status > BSEC_OK)
     {
-        if(hasSerial) Serial.println("BSEC warning code : " + String(bsec.status));
+        println("BSEC warning code : " + String(bsec.status));
     }
 
     if (bsec.sensor.status < BME68X_OK)
     {
-        if(hasSerial) Serial.println("BME68X error code : " + String(bsec.sensor.status));
+        println("BME68X error code : " + String(bsec.sensor.status));
         errLeds(0, bsec.sensor.status); /* Halt in case of failure */
     } else if (bsec.sensor.status > BME68X_OK)
     {
-        if(hasSerial) Serial.println("BME68X warning code : " + String(bsec.sensor.status));
+        println("BME68X warning code : " + String(bsec.sensor.status));
     }
 }
 
@@ -756,21 +779,21 @@ bool loadState(Bsec2 bsec)
     if (EEPROM.read(0) == BSEC_MAX_STATE_BLOB_SIZE)
     {
         /* Existing state in EEPROM */
-        if(hasSerial) Serial.println("Reading state from EEPROM");
-        if(hasSerial) Serial.print("State file: ");
+        println("Reading state from EEPROM");
+        print("State file: ");
         for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
         {
             bsecState[i] = EEPROM.read(i + 1);
-            if(hasSerial) Serial.print(String(bsecState[i], HEX) + ", ");
+            print(String(bsecState[i], HEX) + ", ");
         }
-        if(hasSerial) Serial.println();
+        println("");
 
         if (!bsec.setState(bsecState))
             return false;
     } else
     {
         /* Erase the EEPROM with zeroes */
-        if(hasSerial) Serial.println("Erasing EEPROM");
+        println("Erasing EEPROM");
 
         for (uint8_t i = 0; i <= BSEC_MAX_STATE_BLOB_SIZE; i++)
             EEPROM.write(i, 0);
@@ -787,15 +810,15 @@ bool saveState(Bsec2 bsec)
     if (!bsec.getState(bsecState))
         return false;
 
-    if(hasSerial) Serial.println("Writing state to EEPROM");
-    if(hasSerial) Serial.print("State file: ");
+    println("Writing state to EEPROM");
+    print("State file: ");
 
     for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
     {
         EEPROM.write(i + 1, bsecState[i]);
-        if(hasSerial) Serial.print(String(bsecState[i], HEX) + ", ");
+        print(String(bsecState[i], HEX) + ", ");
     }
-    if(hasSerial) Serial.println();
+    println("");
 
     EEPROM.write(0, BSEC_MAX_STATE_BLOB_SIZE);
     EEPROM.commit();
@@ -804,24 +827,25 @@ bool saveState(Bsec2 bsec)
 }
 
 String getWifiStatus() {
-  return "SSID: " + WiFi.SSID() + "\nIP Address: " + WiFi.localIP().toString() + "\nSignal Strength (RSSI): " + String(WiFi.RSSI()) + " dBm";
+  return "Current SSID: " + WiFi.SSID() + "\nIP Address: " + WiFi.localIP().toString() + "\nSignal Strength (RSSI): " + String(WiFi.RSSI()) + " dBm\n\n" + 
+  "Default SSID: \"" + ssid + "\"\nFilesystem SSID: \"" + currentSsid + "\"\n\nDefault pass: \"" + pass + "\"\nFilesystem pass: \"" + currentPass + "\"";
 }
 
 void printWifiStatus() {
   // print the SSID of the network you're attached to:
-  if(hasSerial) Serial.print("SSID: ");
-  if(hasSerial) Serial.println(WiFi.SSID());
+  print("SSID: ");
+  println(WiFi.SSID());
 
   // print your board's IP address:
   IPAddress ip = WiFi.localIP();
-  if(hasSerial) Serial.print("IP Address: ");
-  if(hasSerial) Serial.println(ip);
+  print("IP Address: ");
+  println(ip.toString());
 
   // print the received signal strength:
   long rssi = WiFi.RSSI();
-  if(hasSerial) Serial.print("signal strength (RSSI):");
-  if(hasSerial) Serial.print(rssi);
-  if(hasSerial) Serial.println(" dBm");
+  print("signal strength (RSSI):");
+  print(String(rssi));
+  println(" dBm");
 }
 
 void printHead(WiFiClient &client, int statusCode, String contentType) {
@@ -844,7 +868,7 @@ bool processOneRequest(WiFiClient &client){
   bool reconnectWifi = false;
   String resp = "<table><tr><th>Timestamp [ms]</th><th>raw temperature [°F]</th><th>pressure [mmHg]</th><th>raw relative humidity [%]</th><th>gas [Ohm]</th><th>IAQ</th><th>IAQ accuracy</th><th>temperature [°F]</th><th>relative humidity [%]</th><th>Static IAQ</th><th>CO2 equivalent</th><th>breath VOC equivalent</tr>\n";
   if (client) {
-    if(hasSerial) Serial.println("New client");
+    println("New client");
     bool currentLineIsBlank = true;
     String input = "";
     while (client.connected()) {
@@ -865,7 +889,7 @@ bool processOneRequest(WiFiClient &client){
           }
           //Serial.write(input.c_str());
           if(req.getPath() == "/"){
-            if(hasSerial) Serial.println("Root req, responding!");
+            println("Root req, responding!");
             printHead(client, 200, "text/html");
             client.println("<!DOCTYPE HTML>");
             client.println("<html><head></head><body>");
@@ -886,7 +910,7 @@ bool processOneRequest(WiFiClient &client){
             client.println(ftd(lastOutput.voc));
             client.println("</tr></table></body></html>");
           } else if(req.getPath() == "/state"){
-            if(hasSerial) Serial.println("State req, responding!");
+            println("State req, responding!");
             if(req.getVerb() == Verb::Get){
               printHead(client, 200, "text/html");
               client.println("<!DOCTYPE HTML>");
@@ -895,7 +919,7 @@ bool processOneRequest(WiFiClient &client){
                   client.println("ERROR</pre></body></html>");
                   break;
               } else {
-                if(hasSerial) Serial.println("Writing state to req");
+                println("Writing state to req");
                 for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
                 {
                     client.print(String(bsecState[i], HEX) + ", ");
@@ -904,7 +928,7 @@ bool processOneRequest(WiFiClient &client){
                 break;
               }
             } else if(req.getVerb() == Verb::Put){
-              if(hasSerial) Serial.println("Saving state based on on-demand Put");
+              println("Saving state based on on-demand Put");
               printHead(client, 200, "text/html");
               client.println("<!DOCTYPE HTML>");
               client.println("<html><head></head><body>");
@@ -921,7 +945,7 @@ bool processOneRequest(WiFiClient &client){
                 break;
               }
             } else if(req.getVerb() == Verb::Post){
-              if(hasSerial) Serial.println("Updating state from post body");
+              println("Updating state from post body");
               client.println(req.getBody());
             }
           } else if(req.getPath() == "/reset") {
@@ -937,7 +961,7 @@ bool processOneRequest(WiFiClient &client){
             client.println("<!DOCTYPE HTML>");
             if(req.getVerb() == Verb::Post){
               client.println("<html><head></head><body>Resetting...<br>click <a href='/'>here</a> if you are not automatically redirected.</head></body></html>");
-              if(hasSerial) Serial.println("Reset POST request, the board is resetting NOW!");
+              println("Reset POST request, the board is resetting NOW!");
               resetBoard = true;
             } else {
               client.println("<html><head></head><body><p>Click the button below to reset the board</p><form action='/reset' method='post'><button type=submit>RESET BOARD</button></form></head></body></html>");
@@ -949,7 +973,7 @@ bool processOneRequest(WiFiClient &client){
               client.println("");
               client.println("<!DOCTYPE HTML>");
               client.println("<html><head></head><body>Resetting...<br>click <a href='/'>here</a> if you are not automatically redirected.</head></body></html>");
-              if(hasSerial) Serial.println("Reconnect POST request, the board is reconnecting to wifi NOW!");
+              println("Reconnect POST request, the board is reconnecting to wifi NOW!");
               // reconnect to wifi
               
               reconnectWifi = true;
@@ -984,8 +1008,30 @@ bool processOneRequest(WiFiClient &client){
               client.println(getWifiStatus());
             }
             if(req.getVerb() == Verb::Post){
-              client.println(req.getBody());
+              String b = req.getBody();
+              if(b.indexOf('\n') != -1){
+                String newSsid = b.substring(0, b.indexOf('\n'));
+                String newPass = b.substring(b.indexOf('\n')+1);
+                client.println("SSID: " + String(currentSsid) + "\nPass: " + String(currentPass));
+                settings.setWifiSettings(newSsid, newPass, currentSsid, currentPass);
+                client.println("Successfully set wifi settings!");
+                client.println("new ssid: " + newSsid + "\nnew pass: " + newPass);
+                client.println("SSID: " + String(currentSsid) + "\nPass: " + String(currentPass));
+              }
+              client.println(getWifiStatus());
             }
+          } else if(req.getPath() == "/location") {
+            // output the current location
+            printHead(client, 200, "text/html");
+            client.println("<!DOCTYPE HTML>");
+            client.println("<head></head><body><pre>");
+            if(req.getVerb() == Verb::Post){
+              String b = req.getBody();
+              settings.setLocation(b, metricLocation);
+              client.println("Successfully set location!");
+            }
+            client.println(metricLocation);
+            client.println("</pre></body></html>");
           }
           break;
         }
@@ -998,7 +1044,7 @@ bool processOneRequest(WiFiClient &client){
     }
     delay(1);
     client.stop();
-    if(hasSerial) Serial.println("Client disconnected");
+    println("Client disconnected");
     if(resetBoard){
       rp2040.reboot();
     }

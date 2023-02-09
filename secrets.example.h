@@ -8,7 +8,7 @@ const char  apSSID[] = "your-BSEC"; // AP fallback network SSID
 /**
  * For prometheus and homebridge
  */
-const String metricLocation = "office";
+const char defaultMetricLocation[] = "office";
 /**
  * If you would like to update an apple home temperature "sensor"
  * emulated by https://github.com/benzman81/homebridge-http-webhooks,
