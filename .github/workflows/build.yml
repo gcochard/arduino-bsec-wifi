@@ -67,3 +67,9 @@ jobs:
       # in the build matrix.
       - name: Compile Sketch
         run: arduino-cli --config-file arduino-cli.yml compile --fqbn ${{ matrix.fqbn }} -e
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: build
+          path: build
