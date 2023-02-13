@@ -30,7 +30,7 @@ jobs:
           # This works like this: when the platform is "arduino:samd", the
           # variable `fqbn` is set to "arduino:samd:nano_33_iot".
           - arduino-platform: "rp2040:rp2040"
-            fqbn: "rp2040:rp2040:rpipicow"
+            fqbn: "rp2040:rp2040:rpipicow:flash=2097152_1048576"
             buildpath: "rp2040.rp2040.rpipicow"
 
     # This is the platform GitHub will use to run our workflow, we
