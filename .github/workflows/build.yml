@@ -59,6 +59,10 @@ jobs:
           arduino-cli --config-file arduino-cli.yml lib install --git-url https://github.com/boschsensortec/Bosch-BSEC2-Library.git https://github.com/BoschSensortec/Bosch-BME68x-Library.git
           arduino-cli --config-file arduino-cli.yml lib install "Adafruit BusIO" "Adafruit GFX Library" "Adafruit SSD1306"
 
+      - name: copy example secrets header
+        run: |
+          cp secrets.example.h secrets.h
+
       # Finally, we compile the sketch, using the FQBN that was set
       # in the build matrix.
       - name: Compile Sketch
