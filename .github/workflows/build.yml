@@ -48,14 +48,30 @@ jobs:
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v1
 
+      - name: Cache arduino platform
+        id: arduino-platform-cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.arduino15/packcages
+          key: arduino-platform
+
+      - name: Cache arduino libraries
+        id: arduino-library-cache
+        uses: actions/cache@v3
+        with:
+          path: ~/Arduino/libraries
+          key: arduino-libraries
+
       # We then install the platform, which one will be determined
       # dynamically by the build matrix.
       - name: Install platform
+        if: steps.arduino-platform-cache.outputs.cache-hit != 'true'
         run: |
           arduino-cli --config-file arduino-cli.yml core update-index
           arduino-cli --config-file arduino-cli.yml core install ${{ matrix.arduino-platform }}
 
       - name: Install libraries
+        if: steps.arduino-library-cache.outputs.cache-hit != 'true'
         run: |
           arduino-cli --config-file arduino-cli.yml lib install --git-url https://github.com/boschsensortec/Bosch-BSEC2-Library.git#v1.4.2200
           arduino-cli --config-file arduino-cli.yml lib install "Adafruit BusIO" "Adafruit GFX Library" "Adafruit SSD1306" "BME68x Sensor library"
