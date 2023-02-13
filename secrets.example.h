@@ -17,9 +17,9 @@ const char defaultMetricLocation[] = "office";
 #define HOMEBRIDGE
 const String homebridgeHost = "192.168.192.168";
 const String webhookPort = "51828";
-const String aqiSensorId = metricLocation + "aqi";
-const String humiditySensorId = metricLocation + "humidity";
-const String tempSensorId = metricLocation + "temp";
+const String aqiSensorId = "aqi";
+const String humiditySensorId = "humidity";
+const String tempSensorId = "temp";
 
 
 
