@@ -72,5 +72,5 @@ jobs:
       - name: Upload the artifact
         uses: actions/upload-artifact@v3
         with:
-          name: build-${{ matrix.fqbn }}
+          name: build-${{ matrix.buildpath }}
           path: build/${{ matrix.buildpath }}/
