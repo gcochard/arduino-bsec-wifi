@@ -83,7 +83,7 @@ jobs:
       # Finally, we compile the sketch, using the FQBN that was set
       # in the build matrix.
       - name: Compile Sketch
-        run: arduino-cli --config-file arduino-cli.yml compile --fqbn ${{ matrix.fqbn }} -e
+        run: arduino-cli --config-file arduino-cli.yml compile --fqbn ${{ matrix.fqbn }} --build-properties build.project_name=arduino-bsec-wifi.${{matrix.buildpath}} -e
 
       - name: Upload the artifact
         uses: actions/upload-artifact@v3
