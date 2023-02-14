@@ -7,6 +7,9 @@ on:
     types: [completed]
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   on-success:
     runs-on: ubuntu-latest
