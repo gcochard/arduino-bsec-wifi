@@ -156,7 +156,7 @@ String currentSsid = ssid;
 String currentPass = pass;
 String metricLocation = defaultMetricLocation;
 
-const uint32_t WATCHDOG_TIMEOUT = 8300;
+const uint32_t WATCHDOG_TIMEOUT = 8000;
 void startWatchdog(){
   rp2040.wdt_begin(WATCHDOG_TIMEOUT);
 }
@@ -180,7 +180,9 @@ void connectToWifi(){
   println("Attempting to connect to SSID: "+currentSsid+" with password: "+currentPass);
 
   unsigned long startTime = millis();
-  WiFi.setTimeout(4000);
+  // set the timeout for wifi to half the watchdog timeout, so we don't end up restarting
+  // when waiting for a wifi connection to be established
+  WiFi.setTimeout(WATCHDOG_TIMEOUT>>1);
   WiFi.begin(currentSsid.c_str(), currentPass.c_str());
   wifiApMode = false;
   bool wifiFallback = false;
