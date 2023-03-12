@@ -156,6 +156,15 @@ String currentSsid = ssid;
 String currentPass = pass;
 String metricLocation = defaultMetricLocation;
 
+const uint32_t WATCHDOG_TIMEOUT = 8300;
+void startWatchdog(){
+  rp2040.wdt_begin(WATCHDOG_TIMEOUT);
+}
+
+void feedWatchdog(){
+  rp2040.wdt_reset();
+}
+
 void print(String val){
   if(hasSerial){
     Serial.print(val);
@@ -171,6 +180,7 @@ void connectToWifi(){
   println("Attempting to connect to SSID: "+currentSsid+" with password: "+currentPass);
 
   unsigned long startTime = millis();
+  WiFi.setTimeout(4000);
   WiFi.begin(currentSsid.c_str(), currentPass.c_str());
   wifiApMode = false;
   bool wifiFallback = false;
