@@ -90,8 +90,8 @@ Request::Request(String &in, bool serial){
     headerCount = 0;
     if(hasSerial) Serial.println("Parsing headers...");
     while(tmp.indexOf('\n') && headerCount < 20 && tmp.length()){
-      headers_arr[headerCount] = new String;
-      headers_arr[headerCount]->concat(tmp.substring(0,tmp.indexOf('\n')));
+      headers_arr[headerCount] = new String(tmp.substring(0, tmp.indexOf('\n')));
+      //headers_arr[headerCount]->concat(tmp.substring(0,tmp.indexOf('\n')));
       tmp = tmp.substring(tmp.indexOf('\n')+1);
       headerCount++;
     }

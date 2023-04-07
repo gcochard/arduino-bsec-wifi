@@ -144,6 +144,57 @@ static uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE];
 /* Gas estimate names will be according to the configuration classes used */
 const String gasName[] = { "Field Air", "Hand sanitizer", "Undefined 3", "Undefined 4"};
 
+/**
+ * Battery measurement support!
+ * Mostly taken directly from https://github.com/raspberrypi/pico-examples/pull/326
+ * Seems to work even within an HTTP request handler!
+ */
+#include "pico/cyw43_arch.h"
+#include "hardware/gpio.h"
+#include "hardware/adc.h"
+#include "pico/cyw43_arch/arch_threadsafe_background.h"  //to get access to void cyw43_thread_enter(void);  and void cyw43_thread_exit(void);
+#ifndef CYW43_WL_GPIO2
+#define CYW43_WL_GPIO2 2  //this is not defined in pico_w.h
+#endif
+const float VSYS_CONVERSION_FACTOR = 3 * 3.3f / (1 << 12);
+//Set GPIO29 back to settings for wifi usage (shared pin with ADC3, so settings are changed when activating ADC3)
+void SetGPIO29WifiStatus(){
+    gpio_set_function(29, GPIO_FUNC_PIO1); //7
+    gpio_pull_down(29);
+    gpio_set_slew_rate(29, GPIO_SLEW_RATE_FAST); //1
+    gpio_set_drive_strength(29, GPIO_DRIVE_STRENGTH_12MA); //3
+}
+
+float measureVsys(){
+  //WL_GPIO2, IP VBUS sense - high if VBUS is present, else low
+  uint vbus = cyw43_arch_gpio_get(CYW43_WL_GPIO2);
+  if(vbus == 0){
+    // low, on battery, measure voltage
+    print("on battery!");
+  } else {
+    print("on USB!");
+  }
+
+    // first let's prevent the wifi background thread from processing...
+    cyw43_thread_enter();
+
+    //initialize and select ADC3/GPIO29
+    adc_gpio_init(29);
+    adc_select_input(3);
+
+    //Read ADC3, result is 1/3 of VSYS, so we still need to multiply the conversion factor with 3 to get the input voltage
+    uint16_t adc3 = adc_read();
+    float vsys = adc3 * VSYS_CONVERSION_FACTOR;
+
+    // return gp29 to its previous state
+    SetGPIO29WifiStatus();
+    cyw43_thread_exit();
+    return vsys;
+}
+/**
+ * End battery measurement code
+ */
+
 WiFiServer server(80);
 
 #ifdef TLS
@@ -1000,18 +1051,30 @@ bool processOneRequest(WiFiClient &client){
             } else {
             printHead(client, 200, "text/plain");
               char buf[20];
+              // use timestamp of the last full read for the sensor metrics
               ltoa(committedOutput.timestamp, buf, 10);
-              client.print(metric("rawtemp", committedOutput.raw_temp, metricLocation, String(buf)));
-              client.print(metric("pressure", committedOutput.raw_pressure, metricLocation, String(buf)));
-              client.print(metric("rawhumidity", committedOutput.raw_humidity, metricLocation, String(buf)));
-              client.print(metric("rawgas", committedOutput.raw_gas, metricLocation, String(buf)));
-              client.print(metric("aqi", committedOutput.air_quality, metricLocation, String(buf)));
-              client.print(metric("aqi_accuracy", committedOutput.air_quality_accuracy, metricLocation, String(buf)));
-              client.print(metric("temperatureF", committedOutput.comp_temp, metricLocation, String(buf)));
-              client.print(metric("humidity", committedOutput.comp_humidity, metricLocation, String(buf)));
-              client.print(metric("static_aqi", committedOutput.static_air_quality, metricLocation, String(buf)));
-              client.print(metric("eco2", committedOutput.eco2, metricLocation, String(buf)));
-              client.print(metric("tvoc", committedOutput.voc, metricLocation, String(buf)));
+              String ts = String(buf);
+              client.print(metric("rawtemp", committedOutput.raw_temp, metricLocation, ts));
+              client.print(metric("pressure", committedOutput.raw_pressure, metricLocation, ts));
+              client.print(metric("rawhumidity", committedOutput.raw_humidity, metricLocation, ts));
+              client.print(metric("rawgas", committedOutput.raw_gas, metricLocation, ts));
+              client.print(metric("aqi", committedOutput.air_quality, metricLocation, ts));
+              client.print(metric("aqi_accuracy", committedOutput.air_quality_accuracy, metricLocation, ts));
+              client.print(metric("temperatureF", committedOutput.comp_temp, metricLocation, ts));
+              client.print(metric("humidity", committedOutput.comp_humidity, metricLocation, ts));
+              client.print(metric("static_aqi", committedOutput.static_air_quality, metricLocation, ts));
+              client.print(metric("eco2", committedOutput.eco2, metricLocation, ts));
+              client.print(metric("tvoc", committedOutput.voc, metricLocation, ts));
+              // and grab a fresh timestamp for the board metrics as they're measured right now
+              ltoa(time(nullptr), buf, 10);
+              ts = String(buf);
+              int rssi = WiFi.RSSI();
+              client.print(metric("heap_free", rp2040.getFreeHeap(), metricLocation, ts));
+              client.print(metric("heap_used", rp2040.getUsedHeap(), metricLocation, ts));
+              client.print(metric("wifi_rssi", rssi, metricLocation, ts));
+
+              // why not tempt fate and do a vsys measurement during a request handler?
+              client.print(metric("vsys_voltage", measureVsys(), metricLocation, ts));
             }
           } else if(req.getPath() == "/wifi") {
             // output the current SSID
