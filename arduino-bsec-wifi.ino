@@ -195,11 +195,22 @@ void connectToWifi(){
         WiFi.begin(ssid, pass);
       }
   }
-
+  // set the RTC using NTP
+  NTP.begin("pool.ntp.org", "time.nist.gov");
+  NTP.waitSet();
+  time_t now = time(nullptr);
+  struct tm timeinfo;
+  gmtime_r(&now, &timeinfo);
+  print("Current time: ");
+  print(asctime(&timeinfo));
+  char buf[20];
+  ltoa(now, buf, 10);
+  println(String(" (") + buf + ")");
 }
 
 typedef struct
 {
+  unsigned long timestamp;
   float raw_temp;
   float raw_pressure;
   float raw_humidity;
@@ -673,6 +684,7 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
 
 void commitLast() {
   memcpy(&committedOutput, &lastOutput, sizeof(bsec_outputs_t));
+  committedOutput.timestamp = time(nullptr);
 }
 
 void updateDisplay()
@@ -855,12 +867,12 @@ void printHead(WiFiClient &client, int statusCode, String contentType) {
     client.println();
 }
 
-String metric(String key, int val, String location) {
-  return key + "{group=\"environment\", location=\""+location+"\"} " + val + "\n";
+String metric(String key, int val, String location, String timestamp) {
+  return key + "{group=\"environment\", location=\""+location+"\"} " + val + " " + timestamp +"000\n";
 }
 
-String metric(String key, float val, String location) {
-  return key + "{group=\"environment\", location=\""+location+"\"} " + val + "\n";
+String metric(String key, float val, String location, String timestamp) {
+  return key + "{group=\"environment\", location=\""+location+"\"} " + val + " " + timestamp + "000\n";
 }
 
 bool processOneRequest(WiFiClient &client){
@@ -987,17 +999,19 @@ bool processOneRequest(WiFiClient &client){
               printHead(client, 500, "text/plain");
             } else {
             printHead(client, 200, "text/plain");
-              client.print(metric("rawtemp", committedOutput.raw_temp, metricLocation));
-              client.print(metric("pressure", committedOutput.raw_pressure, metricLocation));
-              client.print(metric("rawhumidity", committedOutput.raw_humidity, metricLocation));
-              client.print(metric("rawgas", committedOutput.raw_gas, metricLocation));
-              client.print(metric("aqi", committedOutput.air_quality, metricLocation));
-              client.print(metric("aqi_accuracy", committedOutput.air_quality_accuracy, metricLocation));
-              client.print(metric("temperatureF", committedOutput.comp_temp, metricLocation));
-              client.print(metric("humidity", committedOutput.comp_humidity, metricLocation));
-              client.print(metric("static_aqi", committedOutput.static_air_quality, metricLocation));
-              client.print(metric("eco2", committedOutput.eco2, metricLocation));
-              client.print(metric("tvoc", committedOutput.voc, metricLocation));
+              char buf[20];
+              ltoa(committedOutput.timestamp, buf, 10);
+              client.print(metric("rawtemp", committedOutput.raw_temp, metricLocation, String(buf)));
+              client.print(metric("pressure", committedOutput.raw_pressure, metricLocation, String(buf)));
+              client.print(metric("rawhumidity", committedOutput.raw_humidity, metricLocation, String(buf)));
+              client.print(metric("rawgas", committedOutput.raw_gas, metricLocation, String(buf)));
+              client.print(metric("aqi", committedOutput.air_quality, metricLocation, String(buf)));
+              client.print(metric("aqi_accuracy", committedOutput.air_quality_accuracy, metricLocation, String(buf)));
+              client.print(metric("temperatureF", committedOutput.comp_temp, metricLocation, String(buf)));
+              client.print(metric("humidity", committedOutput.comp_humidity, metricLocation, String(buf)));
+              client.print(metric("static_aqi", committedOutput.static_air_quality, metricLocation, String(buf)));
+              client.print(metric("eco2", committedOutput.eco2, metricLocation, String(buf)));
+              client.print(metric("tvoc", committedOutput.voc, metricLocation, String(buf)));
             }
           } else if(req.getPath() == "/wifi") {
             // output the current SSID
