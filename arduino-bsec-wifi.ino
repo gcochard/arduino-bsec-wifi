@@ -319,15 +319,19 @@ void setup(void)
             BSEC_OUTPUT_RAW_PRESSURE,
             BSEC_OUTPUT_RAW_HUMIDITY,
             BSEC_OUTPUT_RAW_GAS,
+/*
             BSEC_OUTPUT_RAW_GAS_INDEX,
+*/
             BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
             BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
             BSEC_OUTPUT_RUN_IN_STATUS,
             BSEC_OUTPUT_STABILIZATION_STATUS,
+/*
             BSEC_OUTPUT_GAS_ESTIMATE_1,
             BSEC_OUTPUT_GAS_ESTIMATE_2,
             BSEC_OUTPUT_GAS_ESTIMATE_3,
             BSEC_OUTPUT_GAS_ESTIMATE_4,
+*/
             BSEC_OUTPUT_IAQ,
             BSEC_OUTPUT_STATIC_IAQ,
             BSEC_OUTPUT_CO2_EQUIVALENT,
@@ -408,10 +412,12 @@ void setup(void)
     }
 
     /* Load the configuration string that stores information on how to classify the detected gas */
+/*
     if (!envSensor.setConfig(FieldAir_HandSanitizer_config))
     {
         checkBsecStatus (envSensor);
     }
+*/
 
     envSensor.setTemperatureOffset(temperatureOffset);
 
@@ -422,7 +428,7 @@ void setup(void)
     }
 
     /* Subscribe for the desired BSEC2 outputs */
-    if (!envSensor.updateSubscription(sensorList, ARRAY_LEN(sensorList), BSEC_SAMPLE_RATE_SCAN))
+    if (!envSensor.updateSubscription(sensorList, ARRAY_LEN(sensorList), BSEC_SAMPLE_RATE_LP))
     {
         checkBsecStatus (envSensor);
     }
@@ -700,15 +706,14 @@ void newDataCallback(const bme68xData data, const bsecOutputs outputs, Bsec2 bse
                 break;
             case BSEC_OUTPUT_RAW_GAS_INDEX:
                 println("\tgas index = " + String(output.signal) + ", accuracy: " + String(output.accuracy));
-                if(int(output.signal) == 9){
-                  updateDisplay();
-                  commitLast();
-                }
                 break;
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE:
                 lastOutput.comp_temp = output.signal * 9 / 5 + 32;
                 lastOutput.comp_temp_c = output.signal;
                 println("\tcompensated temperature = " + String(lastOutput.comp_temp) + "°F" + ", accuracy: " + String(output.accuracy));
+                // commit the measurements here
+                updateDisplay();
+                commitLast();
                 break;
             case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY:
                 println("\tcompensated humidity = " + String(output.signal) + "%" + ", accuracy: " + String(output.accuracy));
