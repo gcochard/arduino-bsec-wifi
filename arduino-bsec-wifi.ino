@@ -136,6 +136,11 @@ bool loadState(Bsec2 bsec);
  */
 bool saveState(Bsec2 bsec);
 
+/**
+ * @brief : This function wipes the state stored in EEPROM
+ */
+bool wipeState(void);
+
 /* Create an object of the class Bsec2 */
 Bsec2 envSensor;
 #ifdef USE_EEPROM
@@ -889,7 +894,23 @@ bool saveState(Bsec2 bsec)
     println("");
 
     EEPROM.write(0, BSEC_MAX_STATE_BLOB_SIZE);
-    EEPROM.commit();
+    return EEPROM.commit();
+#endif
+    return true;
+}
+
+bool wipeState()
+{
+#ifdef USE_EEPROM
+    /* Erase the EEPROM with zeroes */
+    println("Erasing EEPROM");
+
+    for (uint8_t i = 0; i <= BSEC_MAX_STATE_BLOB_SIZE; i++)
+    {
+        EEPROM.write(i, 0);
+    }
+
+    return EEPROM.commit();
 #endif
     return true;
 }
@@ -1013,8 +1034,20 @@ bool processOneRequest(WiFiClient &client){
                 break;
               }
             } else if(req.getVerb() == Verb::Post){
-              println("Updating state from post body");
+              println("Updating state from post body not yet implemented");
               client.println(req.getBody());
+            } else if(req.getVerb() == Verb::Delete){
+              println("Wiping state!");
+              bool wiped = wipeState();
+              printHead(client, 200, "text/html");
+              client.println("<!DOCTYPE HTML>");
+              client.println("<html><head></head><body>");
+              if(wiped) {
+                client.println("<p>Wiped state!</p>");
+              } else {
+                client.println("<p>Could not wipe state!</p>");
+              }
+              client.println("</body></html>");
             }
           } else if(req.getPath() == "/reset") {
             if(req.getVerb() == Verb::Post){
