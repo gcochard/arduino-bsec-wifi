@@ -73,7 +73,7 @@ jobs:
       - name: Install libraries
         if: steps.arduino-library-cache.outputs.cache-hit != 'true'
         run: |
-          arduino-cli --config-file arduino-cli.yml lib install --git-url https://github.com/boschsensortec/Bosch-BSEC2-Library.git#v1.4.2200
+          arduino-cli --config-file arduino-cli.yml lib install --git-url https://github.com/boschsensortec/Bosch-BSEC2-Library.git#v1.5.2400
           arduino-cli --config-file arduino-cli.yml lib install "Adafruit BusIO" "Adafruit GFX Library" "Adafruit SSD1306" "BME68x Sensor library"
 
       - name: copy example secrets header
